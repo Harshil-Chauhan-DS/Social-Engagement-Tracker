@@ -1,5 +1,5 @@
 # Data-Driven Social Engagement Initiative 📊
-
+# Final Project of Unlox Data Science Course
 A data science dashboard built to replace creative guesswork with actual metrics. This project analyzes raw social media data to figure out what makes content go viral and uses NLP to check if audiences actually find the content "relatable."
 
 This is my final Data Science Major Project for Unlox / Graphic Era University (December 2026).
