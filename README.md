@@ -1,30 +1,29 @@
-# Data-Driven Social Engagement Initiative 📊
-# Final Project of Unlox Data Science Course
-A data science dashboard built to replace creative guesswork with actual metrics. This project analyzes raw social media data to figure out what makes content go viral and uses NLP to check if audiences actually find the content "relatable."
+# Data-Driven Social Engagement Initiative 📈
 
-This is my final Data Science Major Project for Unlox / Graphic Era University (December 2026).
+This repository contains my **final Data Science major project** for **Unlox**. The goal of this ecosystem is to replace creative guesswork with rigorous statistical analysis to identify, measure, and optimize content that fosters deep human connection. 
 
-## What It Does
-* **Virality Prediction:** Calculates a custom "Viral Score" by weighing shares and saves much heavier than passive likes.
-* **Sentiment Analysis:** Uses TextBlob and keyword triggers to tag user comments as either "Relatable" or "Neutral".
-* **A/B Testing:** Compares short vs. long-form content to see what actually drives growth.
-* **Save-to-Share Ratio:** Maps out exactly when an audience feels understood.
+By moving beyond passive metrics, this dashboard decodes the science of "relatability".
 
-## Tech Stack
-* **Frontend:** Streamlit (chosen because it's way faster to deploy for a presentation than building a React app from scratch).
-* **Data Processing:** Pandas & NumPy.
-* **NLP:** TextBlob.
-* **Database:** SQLite (kept it lightweight so it doesn't require setting up a separate PostgreSQL server just to test the code).
+## Key Features & Core Modules
+* **Data Extraction Engine:** Uses `BeautifulSoup` to scrape mock engagement metrics (shares, saves, likes) directly from target URLs.
+* **Virality Prediction:** Calculates a weighted 'Viral Coefficient' that prioritizes high-value actions (shares/saves) over passive actions (likes) to identify organic growth potential.
+* **Audience Sentiment Analyzer:** An NLP pipeline utilizing `TextBlob` and specific linguistic triggers to categorize user comments strictly as "Relatable" or "Neutral" to validate problem awareness.
+* **A/B Testing Framework:** Runs independent T-tests via `SciPy` to prove statistically significant differences between content variables (e.g., Short vs. Long format).
+* **Engagement Optimization Recommender:** A `Scikit-learn` Decision Tree Classifier that acts as a prescriptive analytics engine, predicting the optimal posting format and hook style for future content.
+* **Trend Forecasting:** Scrapes trending hashtags to predict rising "relatable struggles" before they hit the mainstream.
+* **Automated Strategy Report:** Generates a downloadable `.txt` report summarizing top topics, statistical findings, and AI-driven recommendations.
 
-## How to Run It Locally
-1. Clone this repo to your machine.
-2. Open your terminal in the project folder and install the dependencies:
-   ```pip install pandas numpy streamlit textblob```
-   
-* Launch the dashboard:
-streamlit run social_engagement_dashboard.py
-Upload your social media CSV file when the browser tab automatically opens.
-Project Notes
-The NLP script uses a hardcoded list of relatable trigger words (like "literally me" or "struggle") combined with TextBlob's baseline polarity. It's not a massive LLM, but it gets the job done perfectly for this scope.
+## Technical Stack
+* **Data Processing:** Python (Pandas, NumPy)
+* **Web Scraping:** BeautifulSoup
+* **Statistical Modeling & Machine Learning:** Scikit-learn, SciPy
+* **NLP:** TextBlob
+* **Frontend:** Streamlit
 
-Author: Harshil Chauhan
+## How to Run Locally
+1. Clone the repository.
+2. Install dependencies: `pip install pandas numpy streamlit textblob scipy scikit-learn beautifulsoup4`
+3. Launch the Streamlit server: `streamlit run social_engagement_dashboard.py`
+
+---
+*Developed by Harshil Chauhan*
