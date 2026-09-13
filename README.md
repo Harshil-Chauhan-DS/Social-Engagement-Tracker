@@ -23,7 +23,7 @@ By moving beyond passive metrics, this dashboard decodes the science of "relatab
 ## How to Run Locally
 1. Clone the repository.
 2. Install dependencies: `pip install pandas numpy streamlit textblob scipy scikit-learn beautifulsoup4`
-3. Launch the Streamlit server: `streamlit run social_engagement_dashboard.py`
+3. Launch the Streamlit server: `streamlit run Social_Engagement_Tracker_HarshilChauhan.py or {file name if you renamed}`
 
 ---
 *Developed by Harshil Chauhan*
