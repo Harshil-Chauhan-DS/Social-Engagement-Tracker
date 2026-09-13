@@ -9,16 +9,13 @@ from textblob import TextBlob
 from scipy.stats import ttest_ind
 from sklearn.tree import DecisionTreeClassifier
 import random
-import io
 
-# -------------------------------------------------------------------
-# MODULE 1: Content Performance Tracker (Data Extraction Engine)
-# -------------------------------------------------------------------
+# Module 1: content performance and data loading
 
-def scrape_engagement_data(dummy_url="https://fake-insta-mirror.com/post123"):
-    # cant actually hit instagram api without approval n keys so faking the response html here
-    # just showing that i know how to pull numbers out of tags with bs4
-    mock_html = """
+def scrape_engagement_data(source_url="https://fake-insta-mirror.com/post123"):
+    # Use sample HTML because the real Instagram API is not available here.
+    # Parse the same fields a real response would provide.
+    html = """
     <div class="post-card">
         <span class="likes">1830</span>
         <span class="shares">245</span>
@@ -26,29 +23,115 @@ def scrape_engagement_data(dummy_url="https://fake-insta-mirror.com/post123"):
         <span class="retention">62</span>
     </div>
     """
-    soup = BeautifulSoup(mock_html, "html.parser")
-    scraped_post = {
+    soup = BeautifulSoup(html, "html.parser")
+    post_data = {
         "likes": int(soup.find("span", class_="likes").text),
         "shares": int(soup.find("span", class_="shares").text),
         "saves": int(soup.find("span", class_="saves").text),
         "retention_rate": int(soup.find("span", class_="retention").text),
-        "source_url": dummy_url
+        "source_url": source_url
     }
-    return scraped_post
-
+    return post_data
 
 def load_local_csv(uploaded_file):
-    # basic wrapper so we can pull real data in if we ever export it from insta
+    # Accept uploaded CSVs without requiring one exact column layout.
     try:
-        insta_df = pd.read_csv(uploaded_file)
-        return insta_df
-    except Exception as e:
-        st.warning("couldnt read the csv, using generated data instead: " + str(e))
+        data = pd.read_csv(uploaded_file)
+    except Exception as exc:
+        st.warning("couldnt read the csv, using generated data instead: " + str(exc))
         return None
 
+    data = universal_column_mapper(data)
+    return data
+
+def find_column(df, keywords):
+    # Match columns by keywords so common naming variations still work.
+
+    for col in df.columns:
+        col_lower = col.lower()
+        for kw in keywords:
+            if kw in col_lower:
+                return col
+    return None
+
+def get_numeric_column(df, column, low, high):
+    # Convert usable values to numbers and handle bad rows.
+    if column is not None:
+        values = pd.to_numeric(df[column], errors="coerce")
+        if not values.isna().all():
+            # a few bad records are fine, just patch NaNs with the column median
+            return values.fillna(values.median())
+    # Fall back to generated values when the field is missing or unusable.
+    return pd.Series(np.random.randint(low, high, size=len(df)))
+
+def get_hour_column(df, column):
+    if column is not None:
+        values = pd.to_numeric(df[column], errors="coerce")
+        if not values.isna().all():
+            return values.fillna(values.median()).astype(int) % 24
+        # A timestamp may have the posting hour embedded in it.
+        try:
+            timestamps = pd.to_datetime(df[column], errors="coerce")
+            if timestamps.notna().any():
+                return timestamps.dt.hour.fillna(12).astype(int)
+        except Exception:
+            pass
+    return pd.Series(np.random.randint(6, 23, size=len(df)))
+
+def get_categorical_column(df, column, choices):
+    if column is not None:
+        # Keep categorical fields only when they look like actual categories.
+        # category (like caption_length getting mistaken for a format column), so we bail out
+        # Otherwise, use the same fallback values as the rest of the pipeline.
+        if df[column].nunique() <= 15:
+            return df[column].astype(str)
+    return pd.Series([random.choice(choices) for _ in range(len(df))])
+
+def get_text_column(df, column):
+    if column is not None:
+        return df[column].astype(str)
+    return pd.Series(["no comment data provided" for _ in range(len(df))])
+
+def universal_column_mapper(df):
+    # Normalize different CSV layouts into the columns used by the dashboard.
+
+    # Missing fields are filled so later steps can run consistently.
+    random.seed(1)
+    np.random.seed(1)
+
+    likes_col = find_column(df, ["like"])
+    shares_col = find_column(df, ["share"])
+    saves_col = find_column(df, ["save"])
+    retention_col = find_column(df, ["retention", "watch_time", "completion"])
+    comments_col = find_column(df, ["comment", "caption", "text"])
+    format_col = find_column(df, ["format", "post_type", "media_type"])
+    hook_col = find_column(df, ["hook"])
+    topic_col = find_column(df, ["topic", "category", "niche", "struggle"])
+    hour_col = find_column(df, ["hour", "time", "posted_at", "timestamp"])
+
+    clean_data = pd.DataFrame()
+    clean_data["topic"] = get_categorical_column(
+        df, topic_col, ["Social Anxiety", "Dating", "College Burnout", "Money Stress", "Friendship Drama"])
+    clean_data["post_format"] = get_categorical_column(df, format_col, ["Short", "Long"])
+    clean_data["hook_type"] = get_categorical_column(df, hook_col, ["Visual", "Text"])
+    clean_data["hour_posted"] = get_hour_column(df, hour_col)
+    clean_data["likes"] = get_numeric_column(df, likes_col, 500, 5000)
+    clean_data["shares"] = get_numeric_column(df, shares_col, 20, 800)
+    clean_data["saves"] = get_numeric_column(df, saves_col, 20, 900)
+    clean_data["retention_rate"] = get_numeric_column(df, retention_col, 30, 95)
+    clean_data["insta_comments"] = get_text_column(df, comments_col)
+
+    detected = {"topic": topic_col, "post_format": format_col, "hook_type": hook_col,
+                "hour_posted": hour_col, "likes": likes_col, "shares": shares_col,
+                "saves": saves_col, "retention_rate": retention_col, "insta_comments": comments_col}
+    missing_fields = [k for k, v in detected.items() if v is None]
+    if missing_fields:
+        st.info(f"couldnt find real columns for {missing_fields} in your csv, mocked those instead")
+
+    return clean_data
 
 def build_mock_dataset(n=60):
-    # generating a fake history of posts since we dont have real api access for this project
+    # Generate a repeatable sample history for the dashboard.
     random.seed(42)
     np.random.seed(42)
 
@@ -69,7 +152,7 @@ def build_mock_dataset(n=60):
         "not really my type of content but ok"
     ]
 
-    rows = []
+    records = []
     for i in range(n):
         topic = random.choice(topics)
         post_format = random.choice(formats)
@@ -81,9 +164,9 @@ def build_mock_dataset(n=60):
         saves = np.random.randint(20, 900)
         retention_rate = np.random.randint(30, 95)
 
-        comment_text = random.choice(relatable_lines + neutral_lines)
+        comment = random.choice(relatable_lines + neutral_lines)
 
-        rows.append({
+        records.append({
             "topic": topic,
             "post_format": post_format,
             "hook_type": hook,
@@ -92,114 +175,116 @@ def build_mock_dataset(n=60):
             "shares": shares,
             "saves": saves,
             "retention_rate": retention_rate,
-            "insta_comments": comment_text
+            "insta_comments": comment
         })
 
-    return pd.DataFrame(rows)
+    return pd.DataFrame(records)
 
-
-# -------------------------------------------------------------------
-# MODULE 2: Virality Prediction Engine
-# -------------------------------------------------------------------
+# Module 2: virality scoring
 
 def calc_viral_score(row):
-    # likes are kinda a vanity metric, shares and saves actually mean people cared enough to act
-    # so giving those way more weight than plain likes when scoring virality
-    viral_score = (row["shares"] * 3) + (row["saves"] * 2.5) + (row["likes"] * 0.5)
-    return viral_score
+    # Shares and saves carry more weight because they represent active engagement.
 
+    score = (row["shares"] * 3) + (row["saves"] * 2.5) + (row["likes"] * 0.5)
+    return score
 
-# -------------------------------------------------------------------
-# MODULE 3: Audience Sentiment Analyzer (NLP Module)
-# -------------------------------------------------------------------
+# Module 3: audience sentiment analysis
 
 trigger_words = ["struggle", "relate", "same", "felt this", "understand", "deeply"]
 
-
-def tag_sentiment(comment_text):
-    comment_lower = comment_text.lower()
-    blob = TextBlob(comment_text)
+def tag_sentiment(comment):
+    comment_lower = comment.lower()
+    blob = TextBlob(comment)
     polarity = blob.sentiment.polarity
 
     has_trigger = any(word in comment_lower for word in trigger_words)
 
-    # if the comment has one of our trigger phrases OR leans a bit negative/emotional
-    # were calling it Relatable, otherwise its just a Neutral comment
+    # Flag comments that match the project's relatable-language rule.
+
     if has_trigger or polarity < -0.1:
         return "Relatable"
     else:
         return "Neutral"
 
-
-# -------------------------------------------------------------------
-# MODULE 4: A/B Testing Framework
-# -------------------------------------------------------------------
+# Module 4: A/B testing
 
 def run_ab_test(df):
-    short_scores = df[df["post_format"] == "Short"]["viral_score"]
-    long_scores = df[df["post_format"] == "Long"]["viral_score"]
+    # Compare the two most common formats in the current dataset.
+    # instead of assuming everyone calls them "Short" and "Long"
+    formats = df["post_format"].value_counts().index[:2].tolist()
 
-    t_stat, p_value_result = ttest_ind(short_scores, long_scores, equal_var=False)
+    if len(formats) < 2:
+        # There is nothing to compare when only one format is present.
+        return None, None, False, formats
 
-    # throwing in a quick t-test here to prove the format difference isnt just random luck
-    # if p_value_result is below 0.05 we can say the difference is statistically significant
-    is_significant = p_value_result < 0.05
+    group_a = df[df["post_format"] == formats[0]]["score"]
+    group_b = df[df["post_format"] == formats[1]]["score"]
 
-    return t_stat, p_value_result, is_significant
+    t_stat, p_value = ttest_ind(group_a, group_b, equal_var=False)
 
+    # Welch's t-test checks whether the observed difference is likely to be meaningful.
+    # if p_value is below 0.05 we can say the difference is statistically significant
+    significant = p_value < 0.05
 
-# -------------------------------------------------------------------
-# MODULE 5: Engagement Optimization Recommender
-# -------------------------------------------------------------------
+    return t_stat, p_value, significant, formats
+
+# Module 5: engagement recommendation
 
 def build_recommender(df):
-    model_df = df.copy()
+    model_data = df.copy()
 
-    # sklearn models need numbers not strings so just mapping the categories manually
-    model_df["hook_encoded"] = model_df["hook_type"].map({"Visual": 1, "Text": 0})
-    model_df["format_encoded"] = model_df["post_format"].map({"Short": 1, "Long": 0})
+    # Encode whatever category labels are actually present in the data.
 
-    median_score = model_df["viral_score"].median()
-    model_df["high_performer"] = (model_df["viral_score"] > median_score).astype(int)
+    model_data["hook_type"] = model_data["hook_type"].astype("category")
+    model_data["post_format"] = model_data["post_format"].astype("category")
+    model_data["hook_encoded"] = model_data["hook_type"].cat.codes
+    model_data["format_encoded"] = model_data["post_format"].cat.codes
 
-    features = model_df[["hour_posted", "hook_encoded", "format_encoded"]]
-    target = model_df["high_performer"]
+    hook_options = list(model_data["hook_type"].cat.categories)
+    format_options = list(model_data["post_format"].cat.categories)
 
-    # using a basic decision tree here since a neural net would be way overkill for 60 rows of data
+    median_score = model_data["score"].median()
+    model_data["high_performer"] = (model_data["score"] > median_score).astype(int)
+
+    features = model_data[["hour_posted", "hook_encoded", "format_encoded"]]
+    target = model_data["high_performer"]
+
+    # A small decision tree is enough for this dataset.
     clf = DecisionTreeClassifier(max_depth=3, random_state=42)
     clf.fit(features, target)
 
-    return clf, model_df
+    return clf, model_data, hook_options, format_options
 
+def recommend_best_combo(clf, hook_options, format_options):
+    # Score every supported hour, hook, and format combination.
 
-def recommend_best_combo(clf):
-    # brute forcing every combo of hour/hook/format and letting the tree score each one
-    # instead of just eyeballing averages like a basic recommender would
     best_combo = None
-    best_prob = -1
+    best_probability = -1
+
+    # A probability needs both outcome classes to be present.
+
+    if len(clf.classes_) < 2:
+        return None, None
 
     for hour in range(6, 24):
-        for hook_encoded, hook_label in [(1, "Visual"), (0, "Text")]:
-            for format_encoded, format_label in [(1, "Short"), (0, "Long")]:
-                test_row = pd.DataFrame(
-                    [[hour, hook_encoded, format_encoded]],
+        for hook_code, hook_label in enumerate(hook_options):
+            for format_code, format_label in enumerate(format_options):
+                test_data = pd.DataFrame(
+                    [[hour, hook_code, format_code]],
                     columns=["hour_posted", "hook_encoded", "format_encoded"]
                 )
-                prob = clf.predict_proba(test_row)[0][1]
-                if prob > best_prob:
-                    best_prob = prob
+                probability = clf.predict_proba(test_data)[0][1]
+                if probability > best_probability:
+                    best_probability = probability
                     best_combo = (hour, hook_label, format_label)
 
-    return best_combo, best_prob
+    return best_combo, best_probability
 
-
-# -------------------------------------------------------------------
-# MODULE 7: Trend Forecasting Module
-# -------------------------------------------------------------------
+# Module 7: trend forecasting
 
 def forecast_trending_topics():
-    # again no real access to twitter/insta trend apis so mocking a scraped hashtag page
-    mock_trend_html = """
+    # Use sample trend HTML because live social trend APIs are not connected.
+    html = """
     <ul class="trending-tags">
         <li data-count="1200">#CollegeBurnout</li>
         <li data-count="950">#Dating2026</li>
@@ -207,23 +292,20 @@ def forecast_trending_topics():
         <li data-count="600">#MoneyStressReal</li>
     </ul>
     """
-    soup = BeautifulSoup(mock_trend_html, "html.parser")
+    soup = BeautifulSoup(html, "html.parser")
     tags = soup.find_all("li")
 
-    trend_list = []
+    trends = []
     for tag in tags:
-        trend_list.append({
+        trends.append({
             "hashtag": tag.text,
             "mentions": int(tag["data-count"])
         })
 
-    trend_df = pd.DataFrame(trend_list).sort_values("mentions", ascending=False)
-    return trend_df
+    trend_data = pd.DataFrame(trends).sort_values("mentions", ascending=False)
+    return trend_data
 
-
-# -------------------------------------------------------------------
-# MODULE 6: Growth Visualization Dashboard (Streamlit frontend)
-# -------------------------------------------------------------------
+# Module 6: Streamlit dashboard
 
 st.title("Data-Driven Social Engagement Initiative")
 st.write("Unlox Data Science Major Project - tracking virality, sentiment and posting strategy")
@@ -232,67 +314,83 @@ st.subheader("Step 1: Data Source")
 uploaded_file = st.file_uploader("Upload your own engagement CSV (optional)", type=["csv"])
 
 if uploaded_file is not None:
-    main_df = load_local_csv(uploaded_file)
-    if main_df is None:
-        main_df = build_mock_dataset()
+    data = load_local_csv(uploaded_file)
+    if data is None:
+        data = build_mock_dataset()
 else:
-    main_df = build_mock_dataset()
+    data = build_mock_dataset()
 
-# quick peek at one scraped post just to show module 1 scraping logic actually works
-sample_scrape = scrape_engagement_data()
-st.caption(f"Sample scraped post (mock): {sample_scrape}")
+# Show the scraping example used by Module 1.
+sample_post = scrape_engagement_data()
+st.caption(f"Sample scraped post (mock): {sample_post}")
 
-# calculating viral score for every row in the dataset
-main_df["viral_score"] = main_df.apply(calc_viral_score, axis=1)
-main_df["sentiment_tag"] = main_df["insta_comments"].apply(tag_sentiment)
-main_df["save_to_share_ratio"] = main_df["saves"] / main_df["shares"]
+# Add the calculated engagement metrics used by the dashboard.
+data["score"] = data.apply(calc_viral_score, axis=1)
+data["sentiment_tag"] = data["insta_comments"].apply(tag_sentiment)
+
+# Avoid infinite ratios when a post has zero shares.
+
+safe_shares = data["shares"].replace(0, np.nan)
+data["save_to_share_ratio"] = data["saves"] / safe_shares
 
 st.subheader("Step 2: Raw + Processed Data")
-st.dataframe(main_df)
+st.dataframe(data)
 
 st.subheader("Step 3: Virality by Topic")
-topic_scores = main_df.groupby("topic")["viral_score"].mean().sort_values(ascending=False)
+topic_scores = data.groupby("topic")["score"].mean().sort_values(ascending=False)
 st.bar_chart(topic_scores)
 
 st.subheader("Step 4: Save-to-Share Ratio (shows when people felt truly understood)")
-ratio_by_topic = main_df.groupby("topic")["save_to_share_ratio"].mean().sort_values(ascending=False)
+ratio_by_topic = data.groupby("topic")["save_to_share_ratio"].mean().sort_values(ascending=False)
 st.bar_chart(ratio_by_topic)
 
 st.subheader("Step 5: Sentiment Breakdown")
-sentiment_counts = main_df["sentiment_tag"].value_counts()
+sentiment_counts = data["sentiment_tag"].value_counts()
 st.bar_chart(sentiment_counts)
 
-st.subheader("Step 6: A/B Test - Short vs Long Format")
-t_stat, p_value_result, is_significant = run_ab_test(main_df)
-st.write(f"T-statistic: {t_stat:.3f}")
-st.write(f"P-value: {p_value_result:.4f}")
-if is_significant:
-    st.success("Result is statistically significant (p < 0.05) - format really does matter here")
+st.subheader("Step 6: A/B Test - Top 2 Post Formats")
+t_stat, p_value, significant, formats = run_ab_test(data)
+if t_stat is None:
+    st.warning("only found one post format in this data, cant run an A/B test on just one group")
 else:
-    st.info("Result is NOT statistically significant - the difference could just be noise")
+    st.write(f"Comparing: {formats[0]} vs {formats[1]}")
+    st.write(f"T-statistic: {t_stat:.3f}")
+    st.write(f"P-value: {p_value:.4f}")
+    if significant:
+        st.success("Result is statistically significant (p < 0.05) - format really does matter here")
+    else:
+        st.info("Result is NOT statistically significant - the difference could just be noise")
 
 st.subheader("Step 7: Posting Strategy Recommendation (Decision Tree)")
-clf_model, model_df_used = build_recommender(main_df)
-best_combo, best_prob = recommend_best_combo(clf_model)
-st.write(
-    f"Recommended combo -> Hour: {best_combo[0]}:00, Hook: {best_combo[1]}, "
-    f"Format: {best_combo[2]} (confidence: {best_prob:.2f})"
-)
+model, model_data, hook_options, format_options = build_recommender(data)
+best_combo, best_probability = recommend_best_combo(model, hook_options, format_options)
+if best_combo is None:
+    st.warning("not enough variety in the data to build a real recommendation")
+else:
+    st.write(
+        f"Recommended combo -> Hour: {best_combo[0]}:00, Hook: {best_combo[1]}, "
+        f"Format: {best_combo[2]} (confidence: {best_probability:.2f})"
+    )
 
 st.subheader("Step 8: Trend Forecasting")
-trend_df = forecast_trending_topics()
-st.dataframe(trend_df)
-st.bar_chart(trend_df.set_index("hashtag")["mentions"])
+trend_data = forecast_trending_topics()
+st.dataframe(trend_data)
+st.bar_chart(trend_data.set_index("hashtag")["mentions"])
 
 st.subheader("Step 9: Export Strategy Report")
 
 top_topic = topic_scores.index[0]
+combo_line = (f"{best_combo[2]} format, {best_combo[1]} hook, around {best_combo[0]}:00"
+              if best_combo is not None else "not enough data to recommend a combo")
+ab_line = (f"{p_value:.4f} ({'significant' if significant else 'not significant'})"
+           if t_stat is not None else "not enough format variety to run")
+
 report_text = f"""STRATEGY REPORT - Data-Driven Social Engagement Initiative
 
 Top performing topic (by viral score): {top_topic}
-Recommended posting combo: {best_combo[2]} format, {best_combo[1]} hook, around {best_combo[0]}:00
-A/B Test p-value: {p_value_result:.4f} ({'significant' if is_significant else 'not significant'})
-Top trending hashtag to watch: {trend_df.iloc[0]['hashtag']}
+Recommended posting combo: {combo_line}
+A/B Test p-value: {ab_line}
+Top trending hashtag to watch: {trend_data.iloc[0]['hashtag']}
 
 Generated for the DADS major project.
 """
